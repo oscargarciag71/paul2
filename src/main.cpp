@@ -64,21 +64,21 @@ volatile bool button_pressed = false;
 // ================= ========= ================= //
 
 void setup() {
-  Serial.begin(115200);
+  //Serial.begin(115200);
 
   pinMode(MODULATION_PIN, OUTPUT);
   pinMode(TEST_PIN, OUTPUT);
   pinMode(BUZZER_PIN, OUTPUT);
-  pinMode(RLED_PIN, OUTPUT);
-  pinMode(GLED_PIN, OUTPUT);
-  pinMode(YLED_PIN, OUTPUT); 
+  //pinMode(RLED_PIN, OUTPUT);
+  //pinMode(GLED_PIN, OUTPUT);
+  //pinMode(YLED_PIN, OUTPUT); 
   pinMode(BUTTON_PIN, INPUT_PULLUP);
   
 
   digitalWrite(BUZZER_PIN, HIGH);
-  digitalWrite(RLED_PIN, HIGH);
-  digitalWrite(GLED_PIN, HIGH);
-  digitalWrite(YLED_PIN, HIGH);
+  //digitalWrite(RLED_PIN, HIGH);
+  //digitalWrite(GLED_PIN, HIGH);
+  //digitalWrite(YLED_PIN, HIGH);
 
   ledcAttachPin(BUZZER_PIN, 0);   // channel 0
   ledcWriteTone(0, 1000);         // 1 kHz tone
@@ -171,7 +171,7 @@ void loop() {
     }
     
     ///// SERIAL PRINTS////
-    // /*
+     /*
     if (!beam_present) {
       Serial.println("🚨 BEAM LOST");
       Serial.print(" R=");
@@ -182,7 +182,7 @@ void loop() {
       Serial.print(" R=");
       Serial.println(R);
     }
-    // */
+     */
 
     buffer_ready = false;
 
@@ -197,7 +197,7 @@ if (button_state) {
   } 
   else {
     if (millis() - button_press_start >= 2000) {
-      Serial.println("Entering deep sleep...");
+      //Serial.println("Entering deep sleep...");
       ledcAttachPin(BUZZER_PIN,0);
       ledcWriteTone(0, 1000);         // lower tone
       delay(2000);
