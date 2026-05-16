@@ -5,7 +5,13 @@
 // PINS
 #define MODULATION_PIN 18
 #define ADC_PIN ADC1_CHANNEL_6
-#define TEST_PIN 14
+#define TEST_PIN 35
+#define BUZZER_PIN 17
+#define RLED_PIN 25
+#define GLED_PIN 26
+#define YLED_PIN 27
+#define BUTTON_PIN 14
+
 
 // CONFIG PARAMETERS
 #define SAMPLE_RATE_HZ 10000 //Ratio SAMPLE_RATE_HZ/REF_FREQ_HZ must be 20
@@ -26,9 +32,9 @@ void IRAM_ATTR modulation_isr() {
 }
 
 // SAMPLE ISR 
-volatile uint32_t sample_count = 0;
+volatile bool sample_flag = 0;
 void IRAM_ATTR sample_isr() {
-  sample_count++;
+  sample_flag = true;
 }
 
 // ================= LUT ================= //
@@ -43,7 +49,6 @@ static const float cos_lut[20] = {
     -1.0000f, -0.9511f, -0.8090f, -0.5878f, -0.3090f,
     0.0000f, 0.3090f, 0.5878f, 0.8090f, 0.9511f};
 
-// ================= Functions ================= //
 
 // ================= Variables ================= //
 volatile uint16_t adc_buffer[ADC_BUFFER_SIZE];
@@ -53,13 +58,38 @@ volatile bool buffer_ready = false;
 bool beam_present = false;
 uint32_t last_valid_time = 0;
 
+volatile uint32_t button_press_start = 0;
+volatile bool button_pressed = false;
 
+// ================= ========= ================= //
 
 void setup() {
   Serial.begin(115200);
 
   pinMode(MODULATION_PIN, OUTPUT);
   pinMode(TEST_PIN, OUTPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
+  pinMode(RLED_PIN, OUTPUT);
+  pinMode(GLED_PIN, OUTPUT);
+  pinMode(YLED_PIN, OUTPUT); 
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
+  
+
+  digitalWrite(BUZZER_PIN, HIGH);
+  digitalWrite(RLED_PIN, HIGH);
+  digitalWrite(GLED_PIN, HIGH);
+  digitalWrite(YLED_PIN, HIGH);
+
+  ledcAttachPin(BUZZER_PIN, 0);   // channel 0
+  ledcWriteTone(0, 1000);         // 1 kHz tone
+  delay(200);
+  ledcWrite(0, 0);
+  ledcDetachPin(BUZZER_PIN);
+
+
+  // Sleep mode setup
+  esp_sleep_enable_ext0_wakeup((gpio_num_t)BUTTON_PIN, 0); // wake when LOW
+  //esp_sleep_enable_ext1_wakeup(1ULL << BUTTON_PIN, ESP_EXT1_WAKEUP_ALL_LOW);
 
   // ADC setup
   adc1_config_width(ADC_WIDTH_BIT_12);
@@ -81,28 +111,24 @@ void setup() {
 void loop() {
 
   
-  if (sample_count > 0 && !buffer_ready) {
+  if (sample_flag && !buffer_ready) {
     // Collect samples
     //digitalWrite(TEST_PIN,HIGH);
 
-    noInterrupts();
-    uint32_t n = sample_count;
-    sample_count = 0;
-    interrupts();
+    sample_flag = false;
 
-    while (n--) {
-      if (write_index < ADC_BUFFER_SIZE) {
-        adc_buffer[write_index++] = adc1_get_raw(ADC_PIN);
-      }
-
-      if (write_index >= ADC_BUFFER_SIZE) {
-        buffer_ready = true;
-        write_index = 0;
-        break;
-      }
+    if (write_index < ADC_BUFFER_SIZE) {
+      adc_buffer[write_index++] = adc1_get_raw(ADC_PIN);
     }
-    //digitalWrite(TEST_PIN,LOW);
+    if (write_index >= ADC_BUFFER_SIZE) {
+      buffer_ready = true;
+      write_index = 0;
+    }
+
+
   }
+    //digitalWrite(TEST_PIN,LOW);
+  
   
 
 
@@ -123,49 +149,69 @@ void loop() {
     X /= ADC_BUFFER_SIZE;
     Y /= ADC_BUFFER_SIZE;
     float R = sqrt(X * X + Y * Y);
-    float phi = atan2(Y, X);
     //digitalWrite(TEST_PIN,LOW);
 
 
 
-    bool valid_signal =
-        (isPhaseStable(phi))&&
-        (isMagStable(R));
 
-    if (valid_signal) {
+
+    // -------- OUTPUT --------
+    if (isMagStable2(R)) {
       last_valid_time = millis();
       beam_present = true;
-    } else {
-      if (millis() - last_valid_time > 100) {
+      digitalWrite(RLED_PIN,HIGH);
+      digitalWrite(GLED_PIN,LOW);
+    } 
+    else {
+      if (millis() - last_valid_time > 200) {
         beam_present = false;
+        digitalWrite(RLED_PIN,LOW);
+        digitalWrite(GLED_PIN,HIGH);
       }
     }
-
-
-
     
-    // -------- OUTPUT --------
+    ///// SERIAL PRINTS////
+    // /*
     if (!beam_present) {
       Serial.println("🚨 BEAM LOST");
-      Serial.print(" phi=");
-      Serial.println(phi);
       Serial.print(" R=");
       Serial.println(R);
     
     } else {
       Serial.println("OK");
-      Serial.print(" phi=");
-      Serial.println(phi);
       Serial.print(" R=");
       Serial.println(R);
     }
-
-
-    
+    // */
 
     buffer_ready = false;
 
   }
+
+bool button_state = digitalRead(BUTTON_PIN) == LOW;
+
+if (button_state) {
+  if (!button_pressed) {
+    button_pressed = true;
+    button_press_start = millis();
+  } 
+  else {
+    if (millis() - button_press_start >= 2000) {
+      Serial.println("Entering deep sleep...");
+      ledcAttachPin(BUZZER_PIN,0);
+      ledcWriteTone(0, 1000);         // lower tone
+      delay(2000);
+      ledcWriteTone(0, 0);           // stop PWM
+      ledcWrite(0, 0);
+      ledcDetachPin(BUZZER_PIN);
+      delay(2000);
+      esp_deep_sleep_start();
+    }
+  }
+} 
+else {
+  button_pressed = false;
+}
 
 
 }
