@@ -1,16 +1,20 @@
 #include <Arduino.h>
 #include "driver/adc.h"
 #include "utils.h"
+#include <WiFi.h>
+#include <esp_now.h>
 
 // PINS
 #define MODULATION_PIN 18
 #define ADC_PIN ADC1_CHANNEL_6
-#define TEST_PIN 35
+#define TEST_PIN 14
 #define BUZZER_PIN 17
 #define RLED_PIN 25
 #define GLED_PIN 26
 #define YLED_PIN 27
 #define BUTTON_PIN 14
+
+#define BROADCAST_INTERVAL_MS 5000
 
 
 // CONFIG PARAMETERS
@@ -61,24 +65,32 @@ uint32_t last_valid_time = 0;
 volatile uint32_t button_press_start = 0;
 volatile bool button_pressed = false;
 
+unsigned long lastSend = 0;
+
+ModuleStatus status;
+
 // ================= ========= ================= //
 
 void setup() {
-  //Serial.begin(115200);
+  Serial.begin(115200);
+
+  WiFi.mode(WIFI_STA);
+  WiFi.setTxPower(WIFI_POWER_2dBm);
+
+
+  initESPNow(1);  // module ID = 1
+  delay(2000);
+
+
 
   pinMode(MODULATION_PIN, OUTPUT);
-  pinMode(TEST_PIN, OUTPUT);
   pinMode(BUZZER_PIN, OUTPUT);
-  //pinMode(RLED_PIN, OUTPUT);
-  //pinMode(GLED_PIN, OUTPUT);
-  //pinMode(YLED_PIN, OUTPUT); 
+  pinMode(GLED_PIN, OUTPUT);
   pinMode(BUTTON_PIN, INPUT_PULLUP);
   
 
   digitalWrite(BUZZER_PIN, HIGH);
-  //digitalWrite(RLED_PIN, HIGH);
-  //digitalWrite(GLED_PIN, HIGH);
-  //digitalWrite(YLED_PIN, HIGH);
+  digitalWrite(GLED_PIN, HIGH);
 
   ledcAttachPin(BUZZER_PIN, 0);   // channel 0
   ledcWriteTone(0, 1000);         // 1 kHz tone
@@ -89,7 +101,6 @@ void setup() {
 
   // Sleep mode setup
   esp_sleep_enable_ext0_wakeup((gpio_num_t)BUTTON_PIN, 0); // wake when LOW
-  //esp_sleep_enable_ext1_wakeup(1ULL << BUTTON_PIN, ESP_EXT1_WAKEUP_ALL_LOW);
 
   // ADC setup
   adc1_config_width(ADC_WIDTH_BIT_12);
@@ -113,8 +124,6 @@ void loop() {
   
   if (sample_flag && !buffer_ready) {
     // Collect samples
-    //digitalWrite(TEST_PIN,HIGH);
-
     sample_flag = false;
 
     if (write_index < ADC_BUFFER_SIZE) {
@@ -124,18 +133,11 @@ void loop() {
       buffer_ready = true;
       write_index = 0;
     }
-
-
   }
-    //digitalWrite(TEST_PIN,LOW);
-  
-  
 
 
   if (buffer_ready) {
     // Perform lock-in
-    //digitalWrite(TEST_PIN,HIGH);
-
     double X = 0;
     double Y = 0;
 
@@ -149,69 +151,58 @@ void loop() {
     X /= ADC_BUFFER_SIZE;
     Y /= ADC_BUFFER_SIZE;
     float R = sqrt(X * X + Y * Y);
-    //digitalWrite(TEST_PIN,LOW);
 
-
-
-
-
-    // -------- OUTPUT --------
     if (isMagStable2(R)) {
       last_valid_time = millis();
       beam_present = true;
-      digitalWrite(RLED_PIN,HIGH);
       digitalWrite(GLED_PIN,LOW);
     } 
     else {
       if (millis() - last_valid_time > 200) {
         beam_present = false;
-        digitalWrite(RLED_PIN,LOW);
         digitalWrite(GLED_PIN,HIGH);
+        status = STATUS_ALARM;
+        sendStatus(status);
       }
     }
-    
-    ///// SERIAL PRINTS////
-     /*
-    if (!beam_present) {
-      Serial.println("🚨 BEAM LOST");
-      Serial.print(" R=");
-      Serial.println(R);
-    
-    } else {
-      Serial.println("OK");
-      Serial.print(" R=");
-      Serial.println(R);
-    }
-     */
-
     buffer_ready = false;
-
   }
 
-bool button_state = digitalRead(BUTTON_PIN) == LOW;
 
-if (button_state) {
-  if (!button_pressed) {
-    button_pressed = true;
-    button_press_start = millis();
+  bool button_state = digitalRead(BUTTON_PIN) == LOW;
+  if (button_state) {
+    if (!button_pressed) {
+      button_pressed = true;
+      button_press_start = millis();
+    } 
+    else {
+      if (millis() - button_press_start >= 2000) {
+        ledcAttachPin(BUZZER_PIN,0);
+        ledcWriteTone(0, 1000);         // lower tone
+        delay(2000);
+        ledcWriteTone(0, 0);           // stop PWM
+        ledcWrite(0, 0);
+        ledcDetachPin(BUZZER_PIN);
+        delay(2000);
+        esp_deep_sleep_start();
+      }
+    }
   } 
   else {
-    if (millis() - button_press_start >= 2000) {
-      //Serial.println("Entering deep sleep...");
-      ledcAttachPin(BUZZER_PIN,0);
-      ledcWriteTone(0, 1000);         // lower tone
-      delay(2000);
-      ledcWriteTone(0, 0);           // stop PWM
-      ledcWrite(0, 0);
-      ledcDetachPin(BUZZER_PIN);
-      delay(2000);
-      esp_deep_sleep_start();
-    }
+    button_pressed = false;
   }
-} 
-else {
-  button_pressed = false;
-}
+
+  
+  if (millis() - lastSend > BROADCAST_INTERVAL_MS) {
+    if (beam_present){
+    status = STATUS_OK;
+    }  
+    else {
+    status = STATUS_ALARM;
+    }
+    sendStatus(status);
+    lastSend = millis();
+  }
 
 
 }
