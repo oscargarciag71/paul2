@@ -14,7 +14,7 @@
 #define YLED_PIN 27
 #define BUTTON_PIN 14
 
-#define BROADCAST_INTERVAL_MS 5000
+#define BROADCAST_INTERVAL_MS 10000
 
 
 // CONFIG PARAMETERS
@@ -81,14 +81,11 @@ void setup() {
   initESPNow(1);  // module ID = 1
   delay(2000);
 
-
-
   pinMode(MODULATION_PIN, OUTPUT);
   pinMode(BUZZER_PIN, OUTPUT);
   pinMode(GLED_PIN, OUTPUT);
   pinMode(BUTTON_PIN, INPUT_PULLUP);
   
-
   digitalWrite(BUZZER_PIN, HIGH);
   digitalWrite(GLED_PIN, HIGH);
 

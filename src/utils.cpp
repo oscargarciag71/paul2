@@ -56,11 +56,13 @@ bool isMagStable2(float R)
   if (R < minR) {
     // transition: STABLE -> NOT STABLE
     if (prev_stable) {
+        ledcAttachPin(BUZZER_PIN, 0);
         ledcWriteTone(0, 2000);         // 1 kHz tone
         delay(150);
         ledcWriteTone(0, 1000);         // 1 kHz tone
         delay(150);
         ledcWrite(0, 0);
+        ledcDetachPin(BUZZER_PIN);
     }
 
     prev_stable = false;
@@ -80,19 +82,23 @@ bool isMagStable2(float R)
   // ---- STATE TRANSITION DETECTION ----
   if (stable && !prev_stable) {
     // NOT STABLE -> STABLE
-    ledcWriteTone(0, 1000);         // 1 kHz tone
-    delay(150);
+    ledcAttachPin(BUZZER_PIN, 0);
     ledcWriteTone(0, 2000);         // 1 kHz tone
     delay(150);
+    ledcWriteTone(0, 1000);         // 1 kHz tone
+    delay(150);
     ledcWrite(0, 0);
+    ledcDetachPin(BUZZER_PIN);
   }
   else if (!stable && prev_stable) {
     // STABLE -> NOT STABLE
+    ledcAttachPin(BUZZER_PIN, 0);
     ledcWriteTone(0, 2000);         // 1 kHz tone
     delay(150);
     ledcWriteTone(0, 1000);         // 1 kHz tone
     delay(150);
     ledcWrite(0, 0);
+    ledcDetachPin(BUZZER_PIN);
   }
 
   prev_stable = stable;
