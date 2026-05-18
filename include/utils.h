@@ -31,7 +31,7 @@ typedef struct __attribute__((packed)) {
 
 // ===================== API =====================
 void initESPNow(uint32_t moduleID);
-void sendStatus(ModuleStatus status);
+void sendStatus(uint32_t moduleID, ModuleStatus status);
 void initESPNowReceiver();
 
 

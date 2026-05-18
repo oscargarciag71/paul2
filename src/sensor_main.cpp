@@ -14,7 +14,7 @@
 #define YLED_PIN 27
 #define BUTTON_PIN 14
 
-#define BROADCAST_INTERVAL_MS 10000
+#define ModuleID 3
 
 
 // CONFIG PARAMETERS
@@ -69,57 +69,71 @@ unsigned long lastSend = 0;
 
 ModuleStatus status;
 
+char string[16];
+uint32_t f;
+
+bool alarm_mode = false;
+bool last_beam_present = true;
+
+const unsigned long NORMAL_INTERVAL = 15000;
+const unsigned long ALARM_INTERVAL  = 5000;
+unsigned long broadcast_interval = NORMAL_INTERVAL;
+
 // ================= ========= ================= //
 
 void setup() {
-  Serial.begin(115200);
 
-  WiFi.mode(WIFI_STA);
-  WiFi.setTxPower(WIFI_POWER_2dBm);
+  delay(100);
+  setCpuFrequencyMhz(160);
+  delay(100);
 
-
-  initESPNow(1);  // module ID = 1
-  delay(2000);
-
+  // Setup output pins
   pinMode(MODULATION_PIN, OUTPUT);
   pinMode(BUZZER_PIN, OUTPUT);
-  pinMode(GLED_PIN, OUTPUT);
   pinMode(BUTTON_PIN, INPUT_PULLUP);
-  
+  //pinMode(TEST_PIN, OUTPUT);
   digitalWrite(BUZZER_PIN, HIGH);
-  digitalWrite(GLED_PIN, HIGH);
+  delay(100);
 
+  // Setup Buzzer
   ledcAttachPin(BUZZER_PIN, 0);   // channel 0
   ledcWriteTone(0, 1000);         // 1 kHz tone
-  delay(200);
-  ledcWrite(0, 0);
+  delay(100);
+  ledcWriteTone(0, 0);
   ledcDetachPin(BUZZER_PIN);
-
+  digitalWrite(BUZZER_PIN, HIGH);
+  delay(2000);
 
   // Sleep mode setup
   esp_sleep_enable_ext0_wakeup((gpio_num_t)BUTTON_PIN, 0); // wake when LOW
+  delay(100);
 
   // ADC setup
   adc1_config_width(ADC_WIDTH_BIT_12);
   adc1_config_channel_atten(ADC_PIN, ADC_ATTEN_DB_12);
+  delay(100);
 
   // Modulation
   modulation_timer = timerBegin(0, 80, true); // 1 MHz tick
   timerAttachInterrupt(modulation_timer, &modulation_isr, true);
-  timerAlarmWrite(modulation_timer, 1000, true); // 500 Hz square wave
+  timerAlarmWrite(modulation_timer, 2000, true); // 500 Hz square wave
   timerAlarmEnable(modulation_timer);
+  delay(100);
 
   // Sample
   sample_timer = timerBegin(1, 80, true); // 1 MHz tick
   timerAttachInterrupt(sample_timer, &sample_isr, true);
-  timerAlarmWrite(sample_timer, 100, true); // 10 kHz 
+  timerAlarmWrite(sample_timer, 200, true); // 10 kHz 
   timerAlarmEnable(sample_timer);
+  delay(100);
 }
 
 void loop() {
 
   
   if (sample_flag && !buffer_ready) {
+    //digitalWrite(TEST_PIN,LOW);
+
     // Collect samples
     sample_flag = false;
 
@@ -130,10 +144,13 @@ void loop() {
       buffer_ready = true;
       write_index = 0;
     }
+    //digitalWrite(TEST_PIN,HIGH);
+
   }
 
 
   if (buffer_ready) {
+    //digitalWrite(TEST_PIN,LOW);
     // Perform lock-in
     double X = 0;
     double Y = 0;
@@ -149,20 +166,29 @@ void loop() {
     Y /= ADC_BUFFER_SIZE;
     float R = sqrt(X * X + Y * Y);
 
-    if (isMagStable2(R)) {
-      last_valid_time = millis();
-      beam_present = true;
-      digitalWrite(GLED_PIN,LOW);
-    } 
-    else {
-      if (millis() - last_valid_time > 200) {
-        beam_present = false;
-        digitalWrite(GLED_PIN,HIGH);
-        status = STATUS_ALARM;
-        sendStatus(status);
-      }
+    bool current_beam = isMagStable2(R);
+    if (last_beam_present && !current_beam) {
+      // BEAM JUST LOST → trigger immediate alarm once
+      alarm_mode = true;
+      broadcast_interval = ALARM_INTERVAL;
+      status = STATUS_ALARM;
+      sendStatus(ModuleID, status);
     }
+
+    if (!last_beam_present && current_beam) {
+      alarm_mode = false;
+      broadcast_interval = NORMAL_INTERVAL;
+      status = STATUS_OK;
+      sendStatus(ModuleID, status); 
+    }
+
+    last_beam_present = current_beam;
+    beam_present = current_beam;
+
+
     buffer_ready = false;
+  //digitalWrite(TEST_PIN,HIGH);
+
   }
 
 
@@ -176,10 +202,10 @@ void loop() {
       if (millis() - button_press_start >= 2000) {
         ledcAttachPin(BUZZER_PIN,0);
         ledcWriteTone(0, 1000);         // lower tone
-        delay(2000);
-        ledcWriteTone(0, 0);           // stop PWM
-        ledcWrite(0, 0);
+        delay(1000);
+        ledcWriteTone(0, 0);
         ledcDetachPin(BUZZER_PIN);
+        digitalWrite(BUZZER_PIN, HIGH);
         delay(2000);
         esp_deep_sleep_start();
       }
@@ -189,17 +215,18 @@ void loop() {
     button_pressed = false;
   }
 
-  
-  if (millis() - lastSend > BROADCAST_INTERVAL_MS) {
+  // /*
+  if (millis() - lastSend > broadcast_interval) {
     if (beam_present){
     status = STATUS_OK;
     }  
     else {
     status = STATUS_ALARM;
     }
-    sendStatus(status);
+    sendStatus(ModuleID,status);
     lastSend = millis();
   }
+  // */
 
 
 }

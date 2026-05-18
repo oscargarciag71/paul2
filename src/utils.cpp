@@ -58,11 +58,12 @@ bool isMagStable2(float R)
     if (prev_stable) {
         ledcAttachPin(BUZZER_PIN, 0);
         ledcWriteTone(0, 2000);         // 1 kHz tone
-        delay(150);
+        delay(120);
         ledcWriteTone(0, 1000);         // 1 kHz tone
-        delay(150);
-        ledcWrite(0, 0);
+        delay(120);
+        ledcWriteTone(0, 0);
         ledcDetachPin(BUZZER_PIN);
+        digitalWrite(BUZZER_PIN, HIGH);
     }
 
     prev_stable = false;
@@ -83,22 +84,24 @@ bool isMagStable2(float R)
   if (stable && !prev_stable) {
     // NOT STABLE -> STABLE
     ledcAttachPin(BUZZER_PIN, 0);
-    ledcWriteTone(0, 2000);         // 1 kHz tone
-    delay(150);
     ledcWriteTone(0, 1000);         // 1 kHz tone
-    delay(150);
-    ledcWrite(0, 0);
+    delay(120);
+    ledcWriteTone(0, 2000);         // 1 kHz tone
+    delay(120);
+    ledcWriteTone(0, 0);
     ledcDetachPin(BUZZER_PIN);
+    digitalWrite(BUZZER_PIN, HIGH);
   }
   else if (!stable && prev_stable) {
     // STABLE -> NOT STABLE
     ledcAttachPin(BUZZER_PIN, 0);
     ledcWriteTone(0, 2000);         // 1 kHz tone
-    delay(150);
+    delay(120);
     ledcWriteTone(0, 1000);         // 1 kHz tone
-    delay(150);
-    ledcWrite(0, 0);
+    delay(120);
+    ledcWriteTone(0, 0);
     ledcDetachPin(BUZZER_PIN);
+    digitalWrite(BUZZER_PIN, HIGH);
   }
 
   prev_stable = stable;
@@ -114,10 +117,25 @@ void onDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
   // optional debug
 }
 
-void initESPNow(uint32_t moduleID) {
-  WiFi.mode(WIFI_STA);
+void sendStatus(uint32_t moduleID, ModuleStatus status) {
 
-  if (esp_now_init() != ESP_OK) return;
+  // ---------------------------
+  // 1. Turn WiFi ON (required for ESP-NOW)
+  // ---------------------------
+  WiFi.mode(WIFI_STA);
+  WiFi.setSleep(true);
+  WiFi.setTxPower(WIFI_POWER_5dBm);
+  //WiFi.setTxPower(WIFI_POWER_2dBm);
+  //WiFi.setTxPower(WIFI_POWER_MINUS_1dBm);
+
+
+  // ---------------------------
+  // 2. Init ESP-NOW
+  // ---------------------------
+  if (esp_now_init() != ESP_OK) {
+    WiFi.mode(WIFI_OFF);
+    return;
+  }
 
   esp_now_register_send_cb(onDataSent);
 
@@ -126,19 +144,33 @@ void initESPNow(uint32_t moduleID) {
   peerInfo.channel = 0;
   peerInfo.encrypt = false;
 
-  esp_now_add_peer(&peerInfo);
+  if (!esp_now_is_peer_exist(broadcastAddress)) {
+    esp_now_add_peer(&peerInfo);
+  }
 
+  // ---------------------------
+  // 3. Prepare packet
+  // ---------------------------
   packet.moduleID = moduleID;
-  packet.status = STATUS_OK;
-}
-
-void sendStatus(ModuleStatus status) {
-
   packet.status = status;
 
-  esp_now_send(broadcastAddress,
-               (uint8_t*)&packet,
-               sizeof(packet));
+  // ---------------------------
+  // 4. Send
+  // ---------------------------
+  esp_now_send(
+    broadcastAddress,
+    (uint8_t*)&packet,
+    sizeof(packet)
+  );
+
+  delay(50); // allow TX to finish
+
+  // ---------------------------
+  // 5. Power down everything
+  // ---------------------------
+  esp_now_deinit();
+  WiFi.disconnect(true);
+  WiFi.mode(WIFI_OFF);
 }
 
 
@@ -207,15 +239,13 @@ static void onDataRecv(const uint8_t *mac,
     // Update alarm state
     detAlarmFlag[id] =
         (packet.status == STATUS_ALARM);
-
-    Serial.print("Detector ");
-    Serial.print(id);
-
-    Serial.print(" | Alive=");
-    Serial.print(detCheckFlag[id]);
-
-    Serial.print(" | Alarm=");
-    Serial.println(detAlarmFlag[id]);
+    
+    //Serial.print("Detector ");
+    //Serial.print(id);
+    //Serial.print(" | Alive=");
+    //Serial.print(detCheckFlag[id]);
+    //Serial.print(" | Alarm=");
+    //Serial.println(detAlarmFlag[id]);
 }
 
 void updateDetectorTimeouts()
@@ -229,9 +259,9 @@ void updateDetectorTimeouts()
         {
             detCheckFlag[id] = false;
 
-            Serial.print("Detector ");
-            Serial.print(id);
-            Serial.println(" timed out");
+            //Serial.print("Detector ");
+            //Serial.print(id);
+            //Serial.println(" timed out");
         }
     }
 }
@@ -243,5 +273,5 @@ void initESPNowReceiver() {
 
   esp_now_register_recv_cb(onDataRecv);
 
-  Serial.println("ESP-NOW Receiver Ready");
+  //Serial.println("ESP-NOW Receiver Ready");
 }

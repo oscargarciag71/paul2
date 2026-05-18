@@ -44,20 +44,22 @@ bool greenLedState = false;
 void setup() {
 
   delay(100);
+  setCpuFrequencyMhz(160);
+  delay(100);
+
+  //Serial.begin(115200); 
+  
+  // Setup Buzzer
   ledcAttachPin(BUZZER_PIN, 0);   // channel 0
   ledcWriteTone(0, 1000);         // 1 kHz tone
-  delay(200);
-  ledcWrite(0, 0);
+  delay(100);
+  ledcWriteTone(0, 0);
+  ledcDetachPin(BUZZER_PIN);
+  digitalWrite(BUZZER_PIN, HIGH);
+  delay(2000);
 
-  delay(1000);
-  Serial.begin(115200);
 
-  WiFi.mode(WIFI_STA);
-  WiFi.setTxPower(WIFI_POWER_2dBm);
-
-  initESPNowReceiver();
-
-  // 🔥 RESET SYSTEM STATE ON BOOT
+  // RESET SYSTEM STATE ON BOOT
   for (int i = 1; i <= 4; i++) {
     detAlarmFlag[i] = false;
     detCheckFlag[i] = false;
@@ -79,6 +81,11 @@ void setup() {
   pinMode(BUTTON_PIN, INPUT_PULLUP);
 
   esp_sleep_enable_ext0_wakeup((gpio_num_t)BUTTON_PIN, 0);
+
+  WiFi.mode(WIFI_STA);
+  WiFi.setSleep(true);
+  WiFi.setTxPower(WIFI_POWER_MINUS_1dBm);
+  initESPNowReceiver();
 }
 
 
@@ -119,21 +126,30 @@ void loop()
         unsigned long start = millis();
         digitalWrite(YLED_PIN, HIGH); // ON (active low)
         digitalWrite(GLED_PIN, HIGH); // ON (active low)
+        //Serial.println("ALARM");
 
         while (millis() - start < 120000) // 2 minutes
         {
+            ledcAttachPin(BUZZER_PIN, 0);   
             digitalWrite(RLED_PIN, LOW); // ON (active low)
             ledcWriteTone(0, 1000);
             delay(150);
             digitalWrite(RLED_PIN, HIGH); // ON (active low)
             ledcWriteTone(0, 2000);
             delay(150);
+
             bool button_state = digitalRead(BUTTON_PIN) == LOW;
-            if (button_state){break;}
-                
-            
+            if (button_state)
+            {
+                for(int i=1; i<=4; i++) {
+                    detAlarmFlag[i] = false;
+                }
+
+                break;   // breaks the while loop
+            }
         }
         ledcWriteTone(0, 0);
+        ledcDetachPin(BUZZER_PIN);
         digitalWrite(RLED_PIN, HIGH);
     }
 
@@ -145,6 +161,7 @@ void loop()
 
     if (anyOffline)
     {
+        //Serial.println("OFFLINE");
         if (now - yellowTimer >= 500)
         {
             yellowTimer = now;
@@ -166,6 +183,7 @@ void loop()
 
     if (allOK)
     {
+        //Serial.println("ALLOK");
         if (now - greenTimer >= 5000)
         {
             greenTimer = now;
